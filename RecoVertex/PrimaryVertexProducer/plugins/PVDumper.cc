@@ -22,7 +22,10 @@
 typedef TrackingParticleRefVector::iterator tp_iterator;
 
 PVDumper::PVDumper(const edm::ParameterSet &conf)
-    : theTTBToken(esConsumes(edm::ESInputTag("", "TransientTrackBuilder"))), theConfig(conf) {
+    : theTTBToken(esConsumes(edm::ESInputTag("", "TransientTrackBuilder"))), theConfig(conf),
+      myfile("output_tree.root", "RECREATE"), mytree("trks", "Tracks and such"), writer(&mytree) {
+
+  mytree.Branch("evt_num", &evt_num, "l");
 
   trkToken = consumes<reco::TrackCollection>(conf.getParameter<edm::InputTag>("TrackLabel"));
   bsToken = consumes<reco::BeamSpot>(conf.getParameter<edm::InputTag>("beamSpotLabel"));
@@ -66,12 +69,26 @@ void PVDumper::produce(edm::Event &iEvent, const edm::EventSetup &iSetup) {
   edm::Handle<reco::TrackToTrackingParticleAssociator> theAssociator;
   iEvent.getByToken(associatorToken_, theAssociator);
 
+  evt_num = iEvent.id().event();
+
   unsigned int i = 0;
   std::map<const TrackingParticle *, unsigned int> trktru_map;
   for (TrackingParticleCollection::const_iterator t = tPC->begin(); t != tPC->end(); ++t) {
 
     if (t->eventId().bunchCrossing() != 0)
       continue;
+
+    /// Truth Track info
+    writer.prt_x.push_back(t->vx());
+    writer.prt_y.push_back(t->vy());
+    writer.prt_z.push_back(t->vz());
+    writer.prt_px.push_back(t->px());
+    writer.prt_py.push_back(t->py());
+    writer.prt_pz.push_back(t->pz());
+    writer.prt_e.push_back(0); // TODO: Remove?
+
+    writer.prt_pvr.push_back(0);
+    // TODO: missing pvr_prt
 
     f_truth_trk << " TruthTrack ";
     f_truth_trk << iEvent.luminosityBlock() << " " << iEvent.id().event() << " " << i << " "; //<< &(*t) ;
@@ -80,15 +97,15 @@ void PVDumper::produce(edm::Event &iEvent, const edm::EventSetup &iSetup) {
     f_truth_trk << t->vx() << " " << t->vy() << " " << t->vz() << " dud ";
 
     // It appears that the GEN information is only available for the primary
-    // vertex not the pileup ones so I am removing it if ( t->genParticle_begin()
-    // != t->genParticle_end() ) {
+    // vertex not the pileup ones so I am removing it
+    // if ( t->genParticle_begin() != t->genParticle_end() ) {
     //  const reco::GenParticle *gp = &(**(t->genParticle_begin()));
     //
     //  f_truth_trk << (*(t->genParticle_begin()))->momentum().rho() << " "
     //		  << (*(t->genParticle_begin()))->vertex().x() << " ";
     //  const reco::GenParticle *mother=gp;
-    //  // I want the vertex of the first decay - so the daughter of the top
-    //  particle while ( (mother->mother() != nullptr) &&
+    //  // I want the vertex of the first decay - so the daughter of the top particle
+    //  while ( (mother->mother() != nullptr) &&
     //  (mother->mother()->mother() != nullptr) ) mother=(const
     //  reco::GenParticle *)mother->mother(); f_truth_trk <<
     //  mother->vertex().x() << " ";
@@ -108,6 +125,12 @@ void PVDumper::produce(edm::Event &iEvent, const edm::EventSetup &iSetup) {
 
     if (v->eventId().bunchCrossing() != 0)
       continue;
+
+    // Vertex info
+    writer.pvr_x.push_back(v->position().x());
+    writer.pvr_y.push_back(v->position().y());
+    writer.pvr_z.push_back(v->position().z());
+    writer.ntrks_prompt.push_back(v->daughterTracks().size());
 
     f_truth_vtx << " TruthVertex ";
     f_truth_vtx << iEvent.luminosityBlock() << " " << iEvent.id().event() << " " << i << " "; // << &(*v) << " ";
@@ -170,6 +193,28 @@ void PVDumper::produce(edm::Event &iEvent, const edm::EventSetup &iSetup) {
         break;
       }
     }
+
+    const math::XYZPoint &inner_position = my_trk.innerPosition();
+    const math::XYZVector &inner_mom = my_trk.innerMomentum();
+    const math::XYZVector &unit_mom = inner_mom.unit();
+
+    double errd0 = my_trk.d0Error();
+    double errz0 = my_trk.dzError();
+
+    // Reco tracks
+    writer.recon_x.push_back(inner_position.x());
+    writer.recon_y.push_back(inner_position.y());
+    writer.recon_z.push_back(inner_position.z());
+    writer.recon_tx.push_back(unit_mom.x());
+    writer.recon_ty.push_back(unit_mom.y());
+    writer.recon_chi2.push_back(my_trk.chi2());
+    // TODO: Use actual POCA
+    writer.recon_pocax.push_back(inner_position.x());
+    writer.recon_pocay.push_back(inner_position.y());
+    writer.recon_pocaz.push_back(inner_position.z());
+    writer.recon_sigmapocaxy.push_back(errd0);
+    writer.recon_errz0.push_back(errz0);
+
     f_trk << "TrkInfo " << iEvent.luminosityBlock() << " " << iEvent.id().event() << " ";
     f_trk << i_val << " "; //<< " " << &my_trk << " "
     f_trk << is_good
@@ -232,6 +277,9 @@ void PVDumper::produce(edm::Event &iEvent, const edm::EventSetup &iSetup) {
 
   auto result = std::make_unique<int>(1);
   iEvent.put(std::move(result));
+  mytree.Fill();
+  myfile.Write();
+  writer.clear();
 }
 
 void PVDumper::fillDescriptions(edm::ConfigurationDescriptions &descriptions) {
