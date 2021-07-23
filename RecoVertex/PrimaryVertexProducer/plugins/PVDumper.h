@@ -115,6 +115,7 @@ struct Writer {
   Vec recon_pocaz{this, "recon_pocaz"};
   Vec recon_sigmapocaxy{this, "recon_sigmapocaxy"};
   Vec recon_errz0{this, "recon_errz0"};
+  Vec recon_is_good{this, "recon_is_good"};
 
   Writer(TTree *tree) : tree(tree) {}
 
@@ -156,8 +157,6 @@ private:
   edm::EDGetTokenT<TrackingVertexCollection> vec_VertexParticle_Token_;
   edm::EDGetTokenT<reco::TrackToTrackingParticleAssociator> associatorToken_;
   edm::EDGetTokenT<edm::View<reco::Track>> trkTokenView;
-
-  std::ofstream f_trk, f_vtx, f_truth_vtx, f_truth_trk;
 
   TFile myfile;
   TTree mytree;

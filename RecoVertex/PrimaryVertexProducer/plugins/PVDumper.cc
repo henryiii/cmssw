@@ -21,6 +21,18 @@
 
 typedef TrackingParticleRefVector::iterator tp_iterator;
 
+const TrackingVertex &get_parent(const TrackingParticle &entry) {
+  const TrackingVertex &canidate = *entry.parentVertex();
+  if (canidate.nSourceTracks() > 1)
+    edm::LogError("TooManySouceTracks") << "A vertex must have a single source";
+  if (canidate.nSourceTracks() > 0) {
+    const TrackingParticle &source = *canidate.sourceTracks().at(0);
+    return get_parent(source);
+  }
+
+  return canidate;
+}
+
 PVDumper::PVDumper(const edm::ParameterSet &conf)
     : theTTBToken(esConsumes(edm::ESInputTag("", "TransientTrackBuilder"))), theConfig(conf),
       myfile("output_tree.root", "RECREATE"), mytree("trks", "Tracks and such"), writer(&mytree) {
@@ -31,12 +43,6 @@ PVDumper::PVDumper(const edm::ParameterSet &conf)
   bsToken = consumes<reco::BeamSpot>(conf.getParameter<edm::InputTag>("beamSpotLabel"));
   vtxToken = consumes<reco::VertexCollection>(edm::InputTag("offlinePrimaryVertices"));
   trkTokenView = consumes<edm::View<reco::Track>>(conf.getParameter<edm::InputTag>("TrackLabel"));
-
-  // Open files
-  f_trk.open("tracks_info.txt", std::ios::out);
-  f_vtx.open("vertex_info.txt", std::ios::out);
-  f_truth_vtx.open("truth_vertex_info.txt", std::ios::out);
-  f_truth_trk.open("truth_track_info.txt", std::ios::out);
 
   vec_TrackingParticle_Token_ = consumes<TrackingParticleCollection>(edm::InputTag("mix", "MergedTrackTruth"));
   vec_VertexParticle_Token_ = consumes<TrackingVertexCollection>(edm::InputTag("mix", "MergedTrackTruth"));
@@ -72,7 +78,37 @@ void PVDumper::produce(edm::Event &iEvent, const edm::EventSetup &iSetup) {
   evt_num = iEvent.id().event();
 
   unsigned int i = 0;
-  std::map<const TrackingParticle *, unsigned int> trktru_map;
+  std::unordered_map<const TrackingVertex *, int> map_parent_vertex;
+
+  for (TrackingVertexCollection::const_iterator v = tVC->begin(); v != tVC->end(); ++v) {
+    if (v->eventId().bunchCrossing() != 0)
+      continue;
+
+    // Vertex info
+    if (v->nSourceTracks() == 0) {
+      writer.pvr_x.push_back(v->position().x());
+      writer.pvr_y.push_back(v->position().y());
+      writer.pvr_z.push_back(v->position().z());
+      writer.ntrks_prompt.push_back(v->daughterTracks().size());
+      map_parent_vertex.emplace(&(*v), i);
+    }
+    i++;
+  }
+  std::cout << "Event " << evt_num << " PVs: " << map_parent_vertex.size() << std::endl;
+
+  for (TrackingVertexCollection::const_iterator v = tVC->begin(); v != tVC->end(); ++v) {
+    if (v->eventId().bunchCrossing() != 0)
+      continue;
+
+    // Vertex info
+    if (v->nSourceTracks() > 0) {
+      writer.svr_x.push_back(v->position().x());
+      writer.svr_y.push_back(v->position().y());
+      writer.svr_z.push_back(v->position().z());
+      writer.svr_pvr.push_back(map_parent_vertex.at(&get_parent(*v->sourceTracks().at(0))));
+    }
+  }
+
   for (TrackingParticleCollection::const_iterator t = tPC->begin(); t != tPC->end(); ++t) {
 
     if (t->eventId().bunchCrossing() != 0)
@@ -85,65 +121,9 @@ void PVDumper::produce(edm::Event &iEvent, const edm::EventSetup &iSetup) {
     writer.prt_px.push_back(t->px());
     writer.prt_py.push_back(t->py());
     writer.prt_pz.push_back(t->pz());
-    writer.prt_e.push_back(0); // TODO: Remove?
+    writer.prt_e.push_back(t->energy());
 
-    writer.prt_pvr.push_back(0);
-    // TODO: missing pvr_prt
-
-    f_truth_trk << " TruthTrack ";
-    f_truth_trk << iEvent.luminosityBlock() << " " << iEvent.id().event() << " " << i << " "; //<< &(*t) ;
-    // f_truth_trk << t -> eventId().bunchCrossing() << " ";
-    f_truth_trk << " " << t->charge() << " " << t->px() << " " << t->py() << " " << t->pz() << " ";
-    f_truth_trk << t->vx() << " " << t->vy() << " " << t->vz() << " dud ";
-
-    // It appears that the GEN information is only available for the primary
-    // vertex not the pileup ones so I am removing it
-    // if ( t->genParticle_begin() != t->genParticle_end() ) {
-    //  const reco::GenParticle *gp = &(**(t->genParticle_begin()));
-    //
-    //  f_truth_trk << (*(t->genParticle_begin()))->momentum().rho() << " "
-    //		  << (*(t->genParticle_begin()))->vertex().x() << " ";
-    //  const reco::GenParticle *mother=gp;
-    //  // I want the vertex of the first decay - so the daughter of the top particle
-    //  while ( (mother->mother() != nullptr) &&
-    //  (mother->mother()->mother() != nullptr) ) mother=(const
-    //  reco::GenParticle *)mother->mother(); f_truth_trk <<
-    //  mother->vertex().x() << " ";
-    //
-    //}
-    // else{
-    //  f_truth_trk << "0 0 0";
-    //}
-
-    f_truth_trk << std::endl;
-    trktru_map[&(*t)] = i;
-    i++;
-  }
-
-  i = 0;
-  for (TrackingVertexCollection::const_iterator v = tVC->begin(); v != tVC->end(); ++v) {
-
-    if (v->eventId().bunchCrossing() != 0)
-      continue;
-
-    // Vertex info
-    writer.pvr_x.push_back(v->position().x());
-    writer.pvr_y.push_back(v->position().y());
-    writer.pvr_z.push_back(v->position().z());
-    writer.ntrks_prompt.push_back(v->daughterTracks().size());
-
-    f_truth_vtx << " TruthVertex ";
-    f_truth_vtx << iEvent.luminosityBlock() << " " << iEvent.id().event() << " " << i << " "; // << &(*v) << " ";
-    // f_truth_vtx << v -> eventId().bunchCrossing() << " ";
-    f_truth_vtx << v->position().x() << " " << v->position().y() << " " << v->position().z() << " "
-                << v->daughterTracks().size() << " ";
-
-    for (tp_iterator iTP = v->daughterTracks_begin(); iTP != v->daughterTracks_end(); ++iTP) {
-      f_truth_vtx << trktru_map[&(*(*iTP))] << " "; // << &(*(*iTP)) << " " ;
-    }
-
-    f_truth_vtx << std::endl;
-    i++;
+    writer.prt_pvr.push_back(map_parent_vertex.at(&get_parent(*t)));
   }
 
   // get RECO tracks from the event
@@ -176,10 +156,6 @@ void PVDumper::produce(edm::Event &iEvent, const edm::EventSetup &iSetup) {
   std::vector<reco::TransientTrack> &&seltks = theTrackFilter->select(t_tks);
 
   int i_val = 0;
-  //    f_trk << "TrkInfo1 " << &i << " " << i.pt() << std::endl;
-  // }
-  // for ( auto & i : seltks) {
-  //  const auto &my_trk= i;//.track();
 
   std::map<const reco::Track *, unsigned int> trk_map;
   for (auto &i : (*tks)) {
@@ -201,6 +177,14 @@ void PVDumper::produce(edm::Event &iEvent, const edm::EventSetup &iSetup) {
     double errd0 = my_trk.d0Error();
     double errz0 = my_trk.dzError();
 
+    // POCA
+    double d0 = my_trk.dxy();
+    double phi = my_trk.phi();
+    double z0 = my_trk.dsz();
+
+    double trk_x0 = d0 * cos(phi - M_PI / 2.0);
+    double trk_y0 = d0 * sin(phi - M_PI / 2.0);
+
     // Reco tracks
     writer.recon_x.push_back(inner_position.x());
     writer.recon_y.push_back(inner_position.y());
@@ -208,71 +192,15 @@ void PVDumper::produce(edm::Event &iEvent, const edm::EventSetup &iSetup) {
     writer.recon_tx.push_back(unit_mom.x());
     writer.recon_ty.push_back(unit_mom.y());
     writer.recon_chi2.push_back(my_trk.chi2());
-    // TODO: Use actual POCA
-    writer.recon_pocax.push_back(inner_position.x());
-    writer.recon_pocay.push_back(inner_position.y());
-    writer.recon_pocaz.push_back(inner_position.z());
+
+    writer.recon_pocax.push_back(trk_x0);
+    writer.recon_pocay.push_back(trk_y0);
+    writer.recon_pocaz.push_back(z0);
     writer.recon_sigmapocaxy.push_back(errd0);
     writer.recon_errz0.push_back(errz0);
+    writer.recon_is_good.push_back(is_good);
 
-    f_trk << "TrkInfo " << iEvent.luminosityBlock() << " " << iEvent.id().event() << " ";
-    f_trk << i_val << " "; //<< " " << &my_trk << " "
-    f_trk << is_good
-          //<< &my_trk << " " << &(*(my_trkbase))
-          << " " << my_trk.pt() << " "; // << my_trkbase->pt() << " ";
-
-    for (unsigned ij = 0; ij < 5; ij++)
-      f_trk << my_trk.parameter(ij) << " ";
-    const reco::Track::CovarianceMatrix innerStateCovariance = my_trk.innerStateCovariance();
-
-    // f_trk << "[ ";
-    for (int ii = 0; ii < 5; ii++) {
-      // f_trk << "[ ";
-      for (int ij = 0; ij < 5; ij++) {
-        f_trk << innerStateCovariance(ii, ij);
-        if (ij != 4)
-          f_trk << ", ";
-      }
-      // f_trk << " ]";
-      if (ii != 4)
-        f_trk << ", ";
-      // else f_trk << " ";
-    }
-    // f_trk << " ] ";
-
-    edm::RefToBase<reco::Track> trackref(trackCollectionV, i_val);
-    reco::RecoToSimCollection::const_iterator f = recSimColl.find(trackref);
-
-    if (f != recSimColl.end()) {
-      TrackingParticleRef tp = f->val.front().first;
-      int tpVal = -1;
-      if (trktru_map.find(&(*tp)) != trktru_map.end()) {
-        tpVal = trktru_map[&(*tp)];
-      }
-      f_trk << tpVal << " ";
-    }
-
-    f_trk << std::endl;
     i_val++;
-  }
-
-  edm::Handle<reco::VertexCollection> vColl;
-  iEvent.getByToken(vtxToken, vColl);
-
-  int i_vtx = 0;
-  for (reco::VertexCollection::const_iterator v = vColl->begin(); v != vColl->end(); ++v) {
-    f_vtx << "VtxInfo "
-          << " " << iEvent.luminosityBlock() << " " << iEvent.id().event() << " " << i_vtx << " ";
-    f_vtx << v->position().x() << " " << v->position().y() << " " << v->position().z() << " ";
-    f_vtx << v->xError() << " " << v->yError() << " " << v->zError() << " ";
-    f_vtx << v->tracksSize() << " ";
-    for (auto iv = v->tracks_begin(); iv != v->tracks_end(); iv++) {
-      f_vtx << trk_map[&(*(*iv))] << " ";
-      // f_vtx << &(*(*iv)) << " ";
-      // f_vtx << (*iv)->pt() << " ";
-    }
-    f_vtx << std::endl;
-    i_vtx++;
   }
 
   auto result = std::make_unique<int>(1);
