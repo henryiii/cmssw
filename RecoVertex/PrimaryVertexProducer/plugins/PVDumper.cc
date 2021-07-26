@@ -180,15 +180,14 @@ void PVDumper::produce(edm::Event &iEvent, const edm::EventSetup &iSetup) {
     // POCA
     double d0 = my_trk.dxy();
     double phi = my_trk.phi();
-    double z0 = my_trk.dsz();
+    double z0 = my_trk.dz();
 
     double trk_x0 = d0 * cos(phi - M_PI / 2.0);
     double trk_y0 = d0 * sin(phi - M_PI / 2.0);
 
-    // Reco tracks
-    writer.recon_x.push_back(inner_position.x());
-    writer.recon_y.push_back(inner_position.y());
-    writer.recon_z.push_back(inner_position.z());
+    writer.recon_x.push_back(trk_x0);
+    writer.recon_y.push_back(trk_y0);
+    writer.recon_z.push_back(z0);
     writer.recon_tx.push_back(unit_mom.x());
     writer.recon_ty.push_back(unit_mom.y());
     writer.recon_chi2.push_back(my_trk.chi2());
