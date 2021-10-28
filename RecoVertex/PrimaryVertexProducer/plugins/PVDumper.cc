@@ -78,23 +78,49 @@ void PVDumper::produce(edm::Event &iEvent, const edm::EventSetup &iSetup) {
   evt_num = iEvent.id().event();
 
   unsigned int i = 0;
+  unsigned int gen = 0;
+  unsigned int gen_filt = 0;
   std::unordered_map<const TrackingVertex *, int> map_parent_vertex;
+  // std::unordered_map<int, int> hist_proc;
 
   for (TrackingVertexCollection::const_iterator v = tVC->begin(); v != tVC->end(); ++v) {
     if (v->eventId().bunchCrossing() != 0)
       continue;
 
+    // std::cout << "i: " << i << std::endl;
+
     // Vertex info
     if (v->nSourceTracks() == 0) {
+      gen++;
+      // hist_proc[v->g4Vertices().at(0).processType()]++;
+      // std::cout << v->g4Vertices().at(0) << std::endl;
+      if (v->nG4Vertices() == 1 && v->g4Vertices().at(0).processType() == 0) {
+        gen_filt++;
+      }
       writer.pvr_x.push_back(v->position().x());
       writer.pvr_y.push_back(v->position().y());
       writer.pvr_z.push_back(v->position().z());
       writer.ntrks_prompt.push_back(v->daughterTracks().size());
       map_parent_vertex.emplace(&(*v), i);
+
+      /*
+      std::cout << "  nG4Vertices: " << v->nG4Vertices() << "\n";
+      std::cout << "  nGenVertices: " << v->nGenVertices() << "\n";
+      std::cout << "  indicies: ";
+      for (const auto& vtx : v->genVertices()) {
+        std::cout << vtx.vertexId() << " ";
+      }
+      std::cout << std::endl;
+      */
     }
     i++;
   }
-  std::cout << "Event " << evt_num << " PVs: " << map_parent_vertex.size() << std::endl;
+  std::cout << "Event " << evt_num << " PVs: " << map_parent_vertex.size() << " gen " << gen << " gen filt " << gen_filt
+            << std::endl;
+  // for (auto const &[key, val] : hist_proc) {
+  //  std::cout << key << ':' << val << ' ';
+  // }
+  // std::cout << std::endl;
 
   for (TrackingVertexCollection::const_iterator v = tVC->begin(); v != tVC->end(); ++v) {
     if (v->eventId().bunchCrossing() != 0)
