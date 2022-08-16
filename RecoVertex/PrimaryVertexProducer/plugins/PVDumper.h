@@ -82,6 +82,11 @@ struct Writer {
   // The ID of the owning PV for the SV
   Vec svr_pvr{this, "svr_pvr"};
 
+  // Temporary information
+  Vec pvr_raw_id{this, "pvr_raw_id"};
+  Vec pvr_n_source_tracks{this, "pvr_n_source_tracks"};
+  Vec pvr_process_type{this, "pvr_process_type"};
+
   /// Hit information
   // Leave empty
   Vec prt_pid{this, "prt_pid"};

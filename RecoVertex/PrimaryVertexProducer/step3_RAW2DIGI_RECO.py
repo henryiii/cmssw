@@ -23,7 +23,7 @@ process.load('Configuration.StandardSequences.EndOfProcess_cff')
 process.load('Configuration.StandardSequences.FrontierConditions_GlobalTag_cff')
 
 process.maxEvents = cms.untracked.PSet(
-    input = cms.untracked.int32(20),
+    input = cms.untracked.int32(-1),
     output = cms.optional.untracked.allowed(cms.int32,cms.PSet)
 )
 
@@ -65,11 +65,11 @@ F68115D9-E295-DA4E-8DB0-15520D79107F.root
 name = 'root://eospublic.cern.ch//eos/opendata/cms/MonteCarlo2018/RunIIAutumn18DR/TTToHadronic_TuneCP5_13TeV-powheg-pythia8/GEN-SIM-DIGI-RAW/PUAvg50IdealConditions_IdealConditions_102X_upgrade2018_design_v9_ext1-v2/260000/'
 
 # Input source - all
-# readFiles = cms.untracked.vstring()
-# readFiles.extend([name + fn for fn in files])
+readFiles = cms.untracked.vstring()
+readFiles.extend([name + fn for fn in files])
 
 # Input source - classic
-readFiles = cms.untracked.vstring(name + files[13])
+#readFiles = cms.untracked.vstring(name + files[14])
 
 process.source = cms.Source("PoolSource",
     fileNames = readFiles,
